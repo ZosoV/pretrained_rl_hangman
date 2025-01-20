@@ -1,0 +1,64 @@
+run_name: DQN_hangman
+project_name: "hangman"
+group_name: null
+mode: "disabled" # "online" or "disabled" ("offline" too but not used)
+
+# Environment
+# SEEDS: [118398, 676190, 786456, 171936, 887739, 919409, 711872, 442081, 189061, 117840]
+env:
+  env_name: Asteroids
+  seed: 118398
+
+# collector
+# Total time steps corresponds to num_iterations * training_steps
+# In other words, there are num_iterations cycles of training_steps steps each
+collector:
+  num_iterations: 200
+  training_steps: 250_000
+  frames_per_batch: 4 # update_period in Dopamine
+  epsilon_start: 1.0
+  epsilon_end: 0.01
+  epsilon_decay_period: 250_000 # TODO: decay has to init after warmup
+  init_random_frames: 20_004 # min_replay_history in Dopamine
+  frame_skip: 4
+
+# policy
+policy:
+  type: "CNN_MLP"
+  cnn_net:
+    num_cells: [32, 64, 64] # number of kernel per layer
+    kernel_sizes: [8, 4, 3]
+    strides: [4, 2, 1]
+  mlp_net:
+    num_cells: [512]  # Number of units per layer
+  activation: "ReLU"  # Activation function used in the layers
+  use_batch_norm: False
+
+# buffer
+buffer:
+  buffer_size: 1_000_000
+  batch_size: 128
+  scratch_dir: null
+  prioritized_replay: False
+
+
+# logger
+logger:
+  backend: wandb
+  save_checkpoints: False
+  save_checkpoint_freq: 10
+  evaluation:
+    enable: False
+    num_episodes: 5
+
+# Optim
+optim:
+  lr: 6.25e-5
+  max_grad_norm: null
+  eps: 1.5e-4 # default: 1e-08 # rainbow 1.5e-4
+
+# loss
+loss:
+  double_dqn: False
+  gamma: 0.99 #
+  target_update_period: 8_000
