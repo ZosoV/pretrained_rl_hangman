@@ -3,37 +3,70 @@ import math
 import tqdm
 import numpy as np
 
-class ScheduledOptim():
-    '''A simple wrapper class for learning rate scheduling'''
+class ScheduledOptim:
+    '''A wrapper class for learning rate scheduling with warmup.'''
 
-    def __init__(self, optimizer, d_model, n_warmup_steps):
+    def __init__(self, optimizer, n_warmup_steps, enable_schedule = False, min_lr=0.0001):
         self._optimizer = optimizer
         self.n_warmup_steps = n_warmup_steps
         self.n_current_steps = 0
-        self.init_lr = np.power(d_model, -0.5)
+        self.init_lr = optimizer.param_groups[0]['lr']
+        self.min_lr = min_lr
+        self.enable_schedule = enable_schedule
 
     def step_and_update_lr(self):
-        "Step with the inner optimizer"
-        self._update_learning_rate()
+        """Step with the inner optimizer."""
+        if self.enable_schedule:
+            self._update_learning_rate()
         self._optimizer.step()
 
     def zero_grad(self):
-        "Zero out the gradients by the inner optimizer"
+        """Zero out the gradients by the inner optimizer."""
         self._optimizer.zero_grad()
 
-    def _get_lr_scale(self):
-        return np.min([
-            np.power(self.n_current_steps, -0.5),
-            np.power(self.n_warmup_steps, -1.5) * self.n_current_steps])
-
     def _update_learning_rate(self):
-        ''' Learning rate scheduling per step '''
-
+        """Update the learning rate for each step."""
         self.n_current_steps += 1
-        lr = self.init_lr * self._get_lr_scale()
 
-        for param_group in self._optimizer.param_groups:
-            param_group['lr'] = lr
+        if self.n_current_steps >= self.n_warmup_steps:
+            lr = self.min_lr
+
+            for param_group in self._optimizer.param_groups:
+                param_group['lr'] = lr
+
+
+
+# class ScheduledOptim():
+#     '''A simple wrapper class for learning rate scheduling'''
+
+#     def __init__(self, optimizer, d_model, n_warmup_steps):
+#         self._optimizer = optimizer
+#         self.n_warmup_steps = n_warmup_steps
+#         self.n_current_steps = 0
+#         self.init_lr = np.power(d_model, -0.5)
+
+#     def step_and_update_lr(self):
+#         "Step with the inner optimizer"
+#         self._update_learning_rate()
+#         self._optimizer.step()
+
+#     def zero_grad(self):
+#         "Zero out the gradients by the inner optimizer"
+#         self._optimizer.zero_grad()
+
+#     def _get_lr_scale(self):
+#         return np.min([
+#             np.power(self.n_current_steps, -0.5),
+#             np.power(self.n_warmup_steps, -1.5) * self.n_current_steps])
+
+#     def _update_learning_rate(self):
+#         ''' Learning rate scheduling per step '''
+
+#         self.n_current_steps += 1
+#         lr = self.init_lr * self._get_lr_scale()
+
+#         for param_group in self._optimizer.param_groups:
+#             param_group['lr'] = lr
 
 class BERTTrainer:
     def __init__(
@@ -44,7 +77,9 @@ class BERTTrainer:
         lr= 1e-4,
         weight_decay=0.01,
         betas=(0.9, 0.999),
-        warmup_steps=10000
+        warmup_steps=10000,
+        enable_schedule=False,
+        min_lr=1e-4
         ):
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -57,7 +92,7 @@ class BERTTrainer:
         # Setting the Adam optimizer with hyper-param
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr, betas=betas, weight_decay=weight_decay)
         self.optim_schedule = ScheduledOptim(
-            self.optimizer, self.model.config.hidden_size, n_warmup_steps=warmup_steps
+            self.optimizer, n_warmup_steps=warmup_steps, enable_schedule=enable_schedule, min_lr=min_lr
             )
         
         # Using Negative Log Likelihood Loss function for predicting the masked_token
@@ -142,7 +177,8 @@ class BERTTrainer:
             f"{group_name}/avg_loss": round(avg_loss / (i + 1), 3),
             f"{group_name}/loss": round(loss.item(), 3),
             f"{group_name}/perplexity": round(perplexity, 3),
-            f"{group_name}/accuracy": round(accuracy, 3)
+            f"{group_name}/accuracy": round(accuracy, 3),
+            f"{group_name}/lr": round(self.optim_schedule._optimizer.param_groups[0]['lr'], 8)
         }
 
         return stats

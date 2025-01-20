@@ -1,4 +1,4 @@
-from model import CustomBERT
+from utils_model import CustomBERT
 from utils_dataset import CharTokenizer, WordDataset
 from trainer import BERTTrainer
 import torch
@@ -47,6 +47,8 @@ learning_rate = cfg.learning_rate
 train_epochs = cfg.train_epochs
 batch_size = cfg.batch_size
 warmup_steps = cfg.warmup_steps
+enable_schedule = cfg.enable_schedule
+min_lr = cfg.min_lr
 
 # Log config
 log_freq = cfg.log_freq
@@ -111,8 +113,9 @@ bert_trainer = BERTTrainer(model,
                             train_dataloader=train_loader,
                             test_dataloader=test1_loader,
                             lr= learning_rate,
-                            warmup_steps=warmup_steps)
-
+                            warmup_steps=warmup_steps,
+                            enable_schedule=enable_schedule,
+                            min_lr=min_lr)
 
 for epoch in range(train_epochs):
     train_stats = bert_trainer.train(epoch)
