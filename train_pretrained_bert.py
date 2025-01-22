@@ -8,6 +8,8 @@ import wandb
 import datetime
 import os
 
+from utils import save_checkpoint
+
 # Load config.yaml
 with open("config_bert.yaml", "r") as file:
     config = yaml.safe_load(file)
@@ -51,7 +53,6 @@ enable_schedule = cfg.enable_schedule
 min_lr = cfg.min_lr
 
 # Log config
-log_freq = cfg.log_freq
 save_model = cfg.save_model
 save_model_freq = cfg.save_model_freq
 enable_evaluation = cfg.enable_evaluation
@@ -70,10 +71,7 @@ model = CustomBERT(
     intermediate_size=intermediate_size,
 )
 
-# Load the model
-if cfg.load_model:
-    print("Loading model: ", cfg.load_model_path)
-    model.load_state_dict(torch.load(cfg.load_model_path))
+
 
 def load_data(file_path):
     words = []
@@ -117,7 +115,20 @@ bert_trainer = BERTTrainer(model,
                             enable_schedule=enable_schedule,
                             min_lr=min_lr)
 
-for epoch in range(train_epochs):
+# Load the model
+if cfg.load_model:
+    print(f"Loading checkpoint: {cfg.load_model_path}")
+    checkpoint = torch.load(cfg.load_model_path)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    bert_trainer.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    if bert_trainer.optim_schedule and checkpoint['scheduler_state_dict']:
+        for param_group, saved_group in zip(bert_trainer.optim_schedule._optimizer.param_groups, checkpoint['scheduler_state_dict']):
+            param_group.update(saved_group)
+    start_epoch = checkpoint['epoch'] + 1
+else:
+    start_epoch = 0
+
+for epoch in range(start_epoch, train_epochs):
     train_stats = bert_trainer.train(epoch)
     wandb.log(train_stats, step=epoch)
 
@@ -133,17 +144,20 @@ for epoch in range(train_epochs):
         wandb.log(test_stats2, step=epoch)
 
     if save_model and (epoch+1) % save_model_freq == 0:
-        print(f"Saving model at epoch {epoch}")
+        print(f"Saving checkpoint at epoch {epoch}")
         # Create the directory
-        path = f"models/model_{date_str}"
+        path = f"models/bert/model_{date_str}"
         os.makedirs(path, exist_ok=True)
-        torch.save(model.state_dict(), f"{path}/bert_model_{epoch}.pth")
+        save_path = f"{path}/checkpoint_epoch_{epoch}.pth"
+        save_checkpoint(epoch, model, bert_trainer.optimizer, bert_trainer.optim_schedule, save_path)
+
 
 # Save the model
 if save_model:
-    print("Saving final model")
-    path = f"models/model_{date_str}"
+    print("Saving final checkpoint")
+    path = f"models/bert/model_{date_str}"
     os.makedirs(path, exist_ok=True)
-    torch.save(model.state_dict(), f"{path}/bert_model_final.pth")
+    save_path = f"{path}/checkpoint_final.pth"
+    save_checkpoint(train_epochs, model, bert_trainer.optimizer, bert_trainer.optim_schedule, save_path)
 
 wandb.finish()

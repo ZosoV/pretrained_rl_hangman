@@ -96,7 +96,7 @@ class BERTTrainer:
             )
         
         # Using Negative Log Likelihood Loss function for predicting the masked_token
-        self.criterion = torch.nn.NLLLoss(ignore_index=0)
+        self.criterion = torch.nn.NLLLoss(ignore_index=-100)
         print("Total Parameters:", sum([p.nelement() for p in self.model.parameters()]))
     
     def train(self, epoch):
@@ -137,7 +137,9 @@ class BERTTrainer:
             data = {key: value.to(self.device) for key, value in data.items()}
 
             # forward the model
-            mask_lm_output = self.model.forward(data["bert_input"], data["attention_mask"])
+            mask_lm_output = self.model.forward(
+                input_ids = data["bert_input"], 
+                attention_mask = data["attention_mask"])
 
             # NLLLoss of predicting masked token word
             # transpose to (m, vocab_size, seq_len) vs (m, seq_len)

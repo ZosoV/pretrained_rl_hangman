@@ -3,6 +3,7 @@ from torch.nn import Module
 from transformers import BertConfig, BertModel, BertTokenizer
 from transformers.models.bert.modeling_bert import BertEmbeddings, BertEncoder, BertPooler
 from torch.utils.data import Dataset, DataLoader
+import random
 
 # Custom Character-Level Tokenizer
 class CharTokenizer:
@@ -50,8 +51,9 @@ class WordDataset(Dataset):
         # Generate random probabilities for each token
         probs = torch.rand(token_ids.shape)
 
-        # 15% of the tokens will be considered for masking
-        mask_prob = probs < 0.15
+        # 30% to 80% of the tokens will be considered for masking
+        mlm_probability = random.uniform(0.15, 0.5)
+        mask_prob = probs < mlm_probability
 
         # If no token is masked, select a random token to mask
         if not mask_prob.any():
@@ -60,9 +62,18 @@ class WordDataset(Dataset):
         # print("0.15 Masked:",  mask_prob)
 
         # Initialize labels (original tokens for masked positions, 0 otherwise)
-        labels = torch.where(mask_prob, token_ids, torch.zeros_like(token_ids))
+        # NOTE: - 100 to ignore loss for non-masked tokens
+        labels = torch.where(mask_prob, token_ids, torch.ones_like(token_ids) * -100)
         # print("labels:", labels)
 
+        # Updated strategy masking all the tokens selected
+        # masked_tokens = torch.where(
+        #     mask_prob, 
+        #     torch.tensor(self.tokenizer.vocab['[MASK]']), 
+        #     token_ids
+        # )
+
+        # NOTE: BERT strategy
         # 80% of masked tokens will be replaced with [MASK]
         mask_replace_prob = torch.rand(token_ids.shape)
         masked_tokens = torch.where(
@@ -82,10 +93,6 @@ class WordDataset(Dataset):
             masked_tokens
         )
         # print("10% from masked: ", mask_prob & (mask_replace_prob >= 0.8) & (random_replace_prob < 0.5))
-        # print(final_tokens)
-
-        # Tokens not selected for masking remain unchanged
-        # final_tokens = torch.where(mask_prob, final_tokens, token_ids)
         # print(final_tokens)
 
         # Adding special tokens ids and correcting labels

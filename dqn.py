@@ -1,7 +1,6 @@
 import time
 import datetime
 
-import hydra
 import torch.nn
 import torch.optim
 import tqdm
@@ -35,9 +34,19 @@ import numpy as np
 np.float_ = np.float64
 import yaml
 
+from gymnasium.envs.registration import register
+
+from utils import AttrDict
+import os
+
+register(
+    id='HangmanEnv-v0',
+    entry_point='custom_env.hangman_env:HangmanEnv',
+    max_episode_steps=32, # NOTE: maximum word length normally around 24 + 6 lives
+)
 
 # Load config.yaml
-with open("config_bert.yaml", "r") as file:
+with open("config_dqn.yaml", "r") as file:
     config = yaml.safe_load(file)
 
 # Set the name with the data of the experiment
@@ -55,12 +64,12 @@ wandb.init(
 )
 
 # Print config
-print("Config:")
-for key, value in config.items():
-    print(f"{key}: {value}")
+# print("Config:")
+# for key, value in config.items():
+#     print(f"{key}: {value}")
 
 # Access hyperparameters
-cfg = wandb.config
+cfg = AttrDict(config)
 
 # Set seeds for reproducibility
 seed = cfg.env.seed
@@ -72,7 +81,6 @@ if torch.cuda.is_available():
     torch.cuda.manual_seed_all(seed)
 
 # Set variables
-frame_skip = cfg.collector.frame_skip
 total_frames = cfg.collector.num_iterations * cfg.collector.training_steps 
 frames_per_batch = cfg.collector.frames_per_batch
 init_random_frames = cfg.collector.init_random_frames
@@ -85,8 +93,7 @@ prioritized_replay = cfg.buffer.prioritized_replay
 
 # Evaualation
 enable_evaluation = cfg.logger.evaluation.enable
-num_eval_episodes = cfg.logger.evaluation.num_episodes
-
+eval_freq = cfg.logger.evaluation.eval_freq
 
 device = cfg.device
 if device in ("", None):
@@ -101,10 +108,9 @@ print(f"Running with Seed: {seed} on Device: {device}")
 
 # Make the components
 # Policy
-model = make_dqn_model(cfg.env.env_name, 
-                        cfg.policy, 
-                        frame_skip).to(device)
+model = make_dqn_model(cfg.policy).to(device)
 
+#TODO: Set correctly the input with the ids according to the tokenizer
 
 # NOTE: annealing_num_steps: number of steps 
 # it will take for epsilon to reach the eps_end value.
@@ -124,13 +130,12 @@ model_explore = TensorDictSequential(
 # NOTE: init_random_frames: Number of frames 
 # for which the policy is ignored before it is called.
 collector = SyncDataCollector(
-    create_env_fn=make_env(cfg.env.env_name,
-                            frame_skip = frame_skip,
-                            device = device, 
-                            seed = cfg.env.seed),
+    create_env_fn=make_env( device = device, 
+                            seed = cfg.env.seed,
+                            pretrained_bert = cfg.policy.load_pretrained_bert,),
     policy=model_explore,
     frames_per_batch=frames_per_batch,
-    total_frames=total_frames,
+    # total_frames=total_frames,
     exploration_type=ExplorationType.RANDOM,
     device=device,
     storing_device=device,
@@ -149,19 +154,22 @@ if cfg.buffer.prioritized_replay:
 else:
     sampler = RandomSampler()
 
-if cfg.buffer.scratch_dir is None:
-    tempdir = tempfile.TemporaryDirectory()
-    scratch_dir = tempdir.name
-else:
-    scratch_dir = cfg.buffer.scratch_dir
+# if cfg.buffer.scratch_dir is None:
+#     tempdir = tempfile.TemporaryDirectory()
+#     scratch_dir = tempdir.name
+# else:
+#     scratch_dir = cfg.buffer.scratch_dir
+
+storage = LazyTensorStorage(max_size=cfg.buffer.buffer_size, device=device)
+# storage = LazyMemmapStorage( # NOTE: additional line
+#         max_size=cfg.buffer.buffer_size,
+#         scratch_dir=scratch_dir,
+#     ),
 
 replay_buffer = TensorDictReplayBuffer(
     pin_memory=False,
     prefetch=20,
-    storage=LazyMemmapStorage( # NOTE: additional line
-        max_size=cfg.buffer.buffer_size,
-        scratch_dir=scratch_dir,
-    ),
+    storage=storage,
     batch_size=cfg.buffer.batch_size,
     sampler = sampler,
     priority_key="total_priority"
@@ -173,9 +181,6 @@ loss_module = DQNLoss(
     loss_function="l2", 
     delay_value=True, # delay_value=True means we will use a target network
 )
-
-# NOTE: additional line for Atari games
-loss_module.set_keys(done="end-of-life", terminated="end-of-life")
 
 loss_module.make_value_estimator(gamma=cfg.loss.gamma) # only to change the gamma value
 loss_module = loss_module.to(device) # NOTE: check if need adding
@@ -191,31 +196,94 @@ optimizer = torch.optim.Adam(loss_module.parameters(),
                                 eps=cfg.optim.eps)
 
 
-# Create the test environment
-# NOTE: new line
-test_env = make_env(cfg.env.env_name,
-                    frame_skip,
-                    device,
-                    seed=cfg.env.seed, 
-                    is_test=True)
-test_env.eval()
+# Eval Env
+with open("data/practice_words.txt", "r") as file:
+    eval_word_list1 = file.read().splitlines()
+
+test_env1 = make_env(device,
+                    seed=cfg.env.seed,
+                    word_list=eval_word_list1,
+                    pretrained_bert=cfg.policy.load_pretrained_bert)
+test_env1.eval()
+
+# with open("data/test_words_nltk.txt", "r") as file:
+#     eval_word_list2 = file.read().splitlines()
+
+# chose 500 words randomly from eval_word_list2
+# eval_word_list2 = random.sample(eval_word_list2, 500)
+
+# test_env2 = make_env(device,
+#                     seed=cfg.env.seed, 
+#                     word_list=eval_word_list2,
+#                     pretrained_bert=cfg.policy.load_pretrained_bert)
+# test_env2.eval()
+
+# iteration = 0
+# print(f"Saving checkpoint at iteration {iteration}")
+
+# # Create the directory
+# path = f"models/dqn/{date_str}"
+# os.makedirs(path, exist_ok=True)
+
+# # Save checkpoint
+# checkpoint = {
+#     'model_state_dict': model.state_dict(),
+#     'optimizer_state_dict': optimizer.state_dict(),
+#     'iteration': iteration,
+#     'collected_frames': 0,
+#     'total_episodes': 0,
+#     'replay_buffer': replay_buffer.state_dict(),  # Save replay buffer state if supported
+#     'greedy_module_state_dict': greedy_module.state_dict(),
+# }
+# torch.save(checkpoint, f"{path}/{cfg.run_name}_checkpoint_{iteration}.pth")
 
 # Main loop
 collected_frames = 0 # Also corresponds to the current step
 total_episodes = 0
-pbar = tqdm.tqdm(total=total_frames)
+
+if cfg.load_checkpoint:
+    # Load checkpoint
+    checkpoint = torch.load(cfg.checkpoint_path)
+
+    # Restore model and optimizer state
+    model.load_state_dict(checkpoint['model_state_dict'])
+    # optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+
+    # Restore other states
+    # start_iteration = checkpoint['iteration'] + 1
+    # collected_frames = checkpoint['collected_frames']
+    # total_episodes = checkpoint['total_episodes']
+
+    # Restore replay buffer if applicable
+    # if 'replay_buffer' in checkpoint:
+    #     replay_buffer.load_state_dict(checkpoint['replay_buffer'])
+
+    # # Restore exploration module
+    # if 'greedy_module_state_dict' in checkpoint:
+    #     greedy_module.load_state_dict(checkpoint['greedy_module_state_dict'])
 
 start_time = time.time()
 c_iter = iter(collector)
-for iteration in range(cfg.num_iterations):
+for iteration in range(cfg.collector.num_iterations):
 
     i = 0
+
+    sum_return = 0
+    number_of_episodes = 0
+    num_steps = 0
+    
+    steps_in_batch = training_steps // frames_per_batch
+    data_iter = tqdm.tqdm(
+            desc="IT_%s:%d" % ("train", iteration),
+            total= steps_in_batch * frames_per_batch,
+            bar_format="{l_bar}{r_bar}"
+        )
     
     training_start = time.time()
-    while i < training_steps:
+    for i in range(steps_in_batch):
         data = next(c_iter)
     
-        pbar.update(data.numel())
+        data_iter.update(data.numel())
 
         # NOTE: This reshape must be for frame data (maybe)
         data = data.reshape(-1)
@@ -254,23 +322,64 @@ for iteration in range(cfg.num_iterations):
         # collector and the trained policy live on different devices.
         collector.update_policy_weights_()
 
-        # TODO:
-        # logger.log_per_step_info(data)
+        episode_rewards = data["next", "episode_reward"][data["next", "done"]]
+        # When there are at least one done trajectory in the data batch
+        if len(episode_rewards) > 0:
+            sum_return += episode_rewards.sum().item()
+            number_of_episodes += len(episode_rewards)
+            
+            # Get episode num_steps
+            episode_num_steps = data["next", "step_count"][data["next", "done"]]
+            num_steps += episode_num_steps.sum().detach().item()
 
     training_time = time.time() - training_start
-    # average_steps_per_second =  logger.data["num_steps"] / training_time
+    average_steps_per_second =  num_steps / training_time
 
-    # After one iteration flush the information to wandb
-    # logger.log_info.update({"train/epsilon": greedy_module.eps,
-    #                         "train/average_q_value": (data["action_value"] * data["action"]).detach().mean().item(),
-    #                         "train/average_total_loss": loss["loss"].detach().mean().item(),
-    #                         "train/average_td_loss": loss["td_loss"].detach().mean().item(),
-    #                         "train/average_mico_loss": loss["mico_loss"].detach().mean().item() if enable_mico else 0,
-    #                         "train/average_steps_per_second": average_steps_per_second,
-    #                         })
-    
-    # # this function will internally call log_per_iteration_info
-    # logger.flush_to_wandb(collected_frames)
+    if collected_frames >= init_random_frames:
+        info2flush = {
+            "train/epsilon": greedy_module.eps,
+            "train/average_q_value": torch.gather(data["action_value"], 1, data["action"].unsqueeze(1)).detach().mean().item(),
+            "train/average_steps_per_second": collected_frames / training_time,
+            "train/average_td_loss": loss["loss"].detach().mean().item(),
+        }
+
+        if number_of_episodes > 0:
+            total_episodes += number_of_episodes
+            info2flush["train/average_return"] = sum_return / number_of_episodes
+            info2flush["train/average_episode_length"] = num_steps / number_of_episodes
+
+        # Evaluation
+        if enable_evaluation:
+            if (iteration + 1) % eval_freq == 0:
+                test_reward, accuracy = eval_model(model, test_env1, iteration)
+                info2flush["eval1/average_return"] = test_reward
+                info2flush["eval1/accuracy"] = accuracy
+
+                # test_reward = eval_model(model, test_env2, iteration)
+                # info2flush["eval2/average_return"] = test_reward
+
+        if cfg.logger.save_checkpoint:
+            if (iteration + 1) % cfg.logger.save_checkpoint_freq == 0:
+                print(f"Saving checkpoint at iteration {iteration}")
+                
+                # Create the directory
+                path = f"models/dqn/{date_str}"
+                os.makedirs(path, exist_ok=True)
+                
+                # Save checkpoint
+                checkpoint = {
+                    'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'iteration': iteration,
+                    'collected_frames': collected_frames,
+                    'total_episodes': total_episodes,
+                    'replay_buffer': replay_buffer.state_dict(),  # Save replay buffer state if supported
+                    'greedy_module_state_dict': greedy_module.state_dict(),
+                }
+                torch.save(checkpoint, f"{path}/{cfg.run_name}_checkpoint_{iteration}.pth")
+
+        # Flush the information to wandb
+        wandb.log(info2flush, step=collected_frames)
 
 collector.shutdown()
 end_time = time.time()
@@ -282,8 +391,11 @@ print("Hyperparameters used:")
 print_hyperparameters(cfg)
 
 # TODO: Saved the model. Check how to save the model and load
-if cfg.logger.save_checkpoints:
-    torch.save(model.state_dict(), f"outputs/models/{cfg.exp_name}_{cfg.env.env_name}_{date_str}.pt")
+if cfg.logger.save_checkpoint:
+    print("Saving final model")
+    path = f"models/dqn/{date_str}"
+    os.makedirs(path, exist_ok=True)
+    torch.save(model.state_dict(), f"{path}/{cfg.run_name}_final_model.pt")
 
 
 wandb.finish()

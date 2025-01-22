@@ -5,7 +5,7 @@ group_name: null
 mode: "online" # "online" or "disabled" ("offline" too but not used)
 
 # Bert config
-hidden_size: 256 #128 # 300 for using Glove embeddings
+hidden_size: 128 #128 # 300 for using Glove embeddings
 num_hidden_layers: 4  # Change as needed
 num_attention_heads: 4
 max_position_embeddings: 32  # Max word length
@@ -14,18 +14,17 @@ max_word_length: 32
 
 # Training config
 train_epochs: 700
-learning_rate: 0.0001 # by scheduler goes to 0.0001 after warmup
-enable_schedule: False
-min_lr: null
-batch_size: 128
+learning_rate: 0.0005 # by scheduler goes to 0.0001 after warmup
+enable_schedule: True
+min_lr: 0.0001
+batch_size: 256
 warmup_steps: 15000
 
 # Logging config
-log_freq: 10
 save_model: True
-save_model_freq: 50
+save_model_freq: 25
 enable_evaluation: True
 
 # Load prev model
 load_model: False
-load_model_path: "./models/model_2025_01_19-22_55_39/bert_model_final.pth"
+load_model_path: "./models/bert/model_2025_01_21-19_42_58/checkpoint_epoch_49.pth"
