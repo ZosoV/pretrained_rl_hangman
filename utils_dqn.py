@@ -111,7 +111,7 @@ def make_dqn_modules_pixels(proof_environment, policy_cfg, test_model=False):
         # q_net.load_state_dict(dqn_model_state_dict)
 
         # Freeze the BERT model
-        # q_net = freezing_layers_and_LoRA(q_net)
+    # q_net = freezing_layers_and_LoRA(q_net)
 
     q_net = TensorDictModule(q_net,
         in_keys=["observation", "tried_letters"], 

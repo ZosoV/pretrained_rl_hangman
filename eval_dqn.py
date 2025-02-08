@@ -97,7 +97,8 @@ cfg.policy.load_pretrained_bert = False
 model = make_dqn_model(cfg.policy).to(device)
 model.eval()
 
-checkpoint_path = "models/dqn/2025_01_22-04_09_37/DQN_hangman_checkpoint_49.pth"
+# NOTE: evaluate also with the e-greedy
+checkpoint_path = "models/dqn/2025_01_22-15_04_27/DQN_hangman_checkpoint_49.pth"
 
 # Load checkpoint
 checkpoint = torch.load(checkpoint_path)
@@ -112,7 +113,7 @@ with open("data/practice_words.txt", "r") as file:
 test_env1 = make_env(device,
                     seed=cfg.env.seed,
                     word_list=eval_word_list1,
-                    pretrained_bert=cfg.policy.load_pretrained_bert)
+                    pretrained_bert=False)
 test_env1.eval()
 
 row_info = [checkpoint_path]
@@ -130,7 +131,7 @@ with open(f"data/test_sets_1000words/group_{1}.txt", "r") as file:
 test_env2 = make_env(device,
                     seed=cfg.env.seed, 
                     word_list=eval_word_list2,
-                    pretrained_bert=cfg.policy.load_pretrained_bert)
+                    pretrained_bert=False)
 test_env2.eval()
 
 test_reward, accuracy = eval_model(model, test_env2, 0)
@@ -145,7 +146,7 @@ with open(f"data/train_sets_1000words/group_{1}.txt", "r") as file:
 test_env2 = make_env(device,
                     seed=cfg.env.seed, 
                     word_list=eval_word_list2,
-                    pretrained_bert=cfg.policy.load_pretrained_bert)
+                    pretrained_bert=False)
 test_env2.eval()
 
 test_reward, accuracy = eval_model(model, test_env2, 0)

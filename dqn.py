@@ -180,6 +180,7 @@ loss_module = DQNLoss(
     value_network=model,
     loss_function="l2", 
     delay_value=True, # delay_value=True means we will use a target network
+    double_dqn=cfg.loss.double_dqn
 )
 
 loss_module.make_value_estimator(gamma=cfg.loss.gamma) # only to change the gamma value

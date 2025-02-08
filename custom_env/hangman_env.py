@@ -118,6 +118,8 @@ class HangmanEnv(gym.Env):
 
         if letter in self.tried_letters:
             reward = -2  # Penalty for repeating a letter
+            self.lives -= 1 # NOTE: I added this line to penalize the player for repeating a letter
+                            # I haven't check experiments with this line yet.
         else:
             self.tried_letters.add(letter)
             if letter in self.target_word:
@@ -166,17 +168,17 @@ class HangmanEnv(gym.Env):
 
         # Additional reward for matching bigrams or trigrams with the current letter
 
-        # temp_dict = {k : 0.5 for k in self.top_bigrams}
-        # bigram_bonus = sum(
-        #     temp_dict.get(self.word_state[i - 1] + letter, 0)
-        #     for i in range(1, len(self.word_state)) if self.word_state[i - 1] != "_"
-        # )
+        temp_dict = {k : 0.5 for k in self.top_bigrams}
+        bigram_bonus = sum(
+            temp_dict.get(self.word_state[i - 1] + letter, 0)
+            for i in range(1, len(self.word_state)) if self.word_state[i - 1] != "_"
+        )
 
-        # temp_dict = {k : 1. for k in self.top_trigrams}
-        # trigram_bonus = sum(
-        #     temp_dict.get("".join(self.word_state[0:2]) + letter, 0)
-        #     for i in range(2, len(self.word_state)) if "".join(self.word_state[0:2]) != "__"
-        # )
+        temp_dict = {k : 1. for k in self.top_trigrams}
+        trigram_bonus = sum(
+            temp_dict.get("".join(self.word_state[0:2]) + letter, 0)
+            for i in range(2, len(self.word_state)) if "".join(self.word_state[0:2]) != "__"
+        )
 
         # Calculate a ratio depending if the game is starting or ending
         # Count the number of underscores in the word state
@@ -200,7 +202,7 @@ class HangmanEnv(gym.Env):
             # "trigram_bonus": trigram_bonus
         }
 
-        return global_reward * ratio + relative_reward * (1 - ratio), info_rewards # + bigram_bonus + trigram_bonus
+        return global_reward * ratio + relative_reward * (1 - ratio), info_rewards # + bigram_bonus + trigram_bonus, info_rewards # 
 
     def _get_obs(self):
 

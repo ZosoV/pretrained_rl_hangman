@@ -112,6 +112,8 @@ class DQNHead(torch.nn.Module):
         self.classifier = torch.nn.Sequential(
             torch.nn.Linear(hidden + 26, 512),  # Hidden size + tried letters size
             torch.nn.ReLU(),
+            torch.nn.Linear(512, 512),
+            torch.nn.ReLU(),
             torch.nn.Linear(512, vocab_size - 4)  # Removing special tokens
         )
 
@@ -119,7 +121,15 @@ class DQNHead(torch.nn.Module):
         # Concatenate the tried letter to the last hidden state
         if tried_letter.dim() == 1:
             tried_letter = tried_letter.unsqueeze(0)
+
+        # sequence_output = torch.cat((sequence_output, prev_guess.unsqueeze(1).repeat(1, sequence_output.shape[1], 1)), dim=2)
+
+        # NOTE: uncomment for calculating eval among all masked and getting the maximum
+        # if not self.training:
+        #     x = torch.cat((x, tried_letter.unsqueeze(1).repeat(1, x.shape[1], 1)), dim=2)
+        # else:
         x = torch.concat((x, tried_letter), dim=1)
+        # x = torch.concat((x, tried_letter), dim=1)
 
         return self.classifier(x)
 
@@ -212,21 +222,45 @@ class CustomBERT(BertPreTrainedModel):
         # encoder_outputs = self.encoder(embeddings, attention_mask=attention_mask, return_dict=True)
 
         # head output
-        if self.dqn_head:
+        # if self.dqn_head and self.training:
 
-            # NOTE: Instead of choosing the CLS token I will a random MASK token
-            # input shape (batch_size, hidden_size, word_length)
-            # Along the input shape check the mask token
-            # If the mask token is present in the input_ids
-            # I will use the mask token as the input to the head
-            # If not I will use the CLS token
-            # if self.tokenizer.mask_token_id in input_ids:
-            #     mask_index = self._get_random_masked_token_mask(input_ids)
-            #     output = self.head(encoder_outputs.last_hidden_state[mask_index], tried_letter)
-            # else:
-            output = self.head(encoder_outputs.pooler_output, tried_letter)
+        #     # NOTE: Instead of choosing the CLS token I will a random MASK token
+        #     # input shape (batch_size, hidden_size, word_length)
+        #     # Along the input shape check the mask token
+        #     # If the mask token is present in the input_ids
+        #     # I will use the mask token as the input to the head
+        #     # If not I will use the CLS token
+        #     # if self.tokenizer.mask_token_id in input_ids:
+        #     # mask_index = self._get_random_masked_token_mask(input_ids)
+        #     # output = self.head(encoder_outputs.last_hidden_state[mask_index], tried_letter)
+        #     # else:
+        #     # output = self.head(encoder_outputs.pooler_output, tried_letter)
 
-            # output = self.head(encoder_outputs.last_hidden_state[:, 0, :], tried_letter)
+        #     output = self.head(encoder_outputs.last_hidden_state[:, 0, :], tried_letter)
+        
+        if self.dqn_head: # and not self.training:
+            if len(tried_letter.shape) == 1:
+                tried_letter = tried_letter.unsqueeze(0)
+
+            # NOTE: uncomment for calculating eval among all masked and getting the maximum
+            # output = self.head(encoder_outputs.last_hidden_state, tried_letter)
+            # if len(tried_letter.shape) == 1:
+            #     tried_letter = tried_letter.unsqueeze(0)
+            #     output[tried_letter.unsqueeze(1).repeat(1, output.shape[1], 1) == 1] = -200
+            # output = output.squeeze(0).detach()
+            # mask = (input_ids == self.tokenizer.mask_token_id)
+            # mask = mask.squeeze(0)
+            # # mask = mask.unsqueeze(1).expand(-1, output.size(1))
+            # output = output[mask]
+            # max_idx = output.amax(dim=1).argmax().item()
+            # output = output[max_idx]
+
+            # mask_index = self._get_random_masked_token_mask(input_ids)
+            # output = self.head(encoder_outputs.last_hidden_state[mask_index], tried_letter)
+            output = self.head(encoder_outputs.last_hidden_state[:, 0, :], tried_letter)
+            output[tried_letter == 1] = -50
+            output = output.squeeze(0)
+            
         else:
             output = self.head(encoder_outputs.last_hidden_state, tried_letter)
 
@@ -236,14 +270,14 @@ class CustomBERT(BertPreTrainedModel):
         #         tried_letter = tried_letter.unsqueeze(0)
         #     output[tried_letter == 1] -= 5 # Reduce the predicte q-value
 
-        if not self.training and self.dqn_head:
-        # if self.dqn_head:
-            if len(tried_letter.shape) == 1:
-                tried_letter = tried_letter.unsqueeze(0)
-            output[tried_letter == 1] = -50 # Set a very low Q-value to don choose it
+        # if not self.training and self.dqn_head:
+        # # if self.dqn_head:
+        #     if len(tried_letter.shape) == 1:
+        #         tried_letter = tried_letter.unsqueeze(0)
+        #     output[tried_letter == 1] = -50 # Set a very low Q-value to don choose it
 
         # If I only processing one input I can return the output with the batch dimension
-        if input_ids.shape[0] == 1:
+        if input_ids.shape[0] == 1 and self.training:
             return output.squeeze(0)
 
         # return encoder_outputs.last_hidden_state, output
@@ -283,9 +317,9 @@ class LoRALinear(nn.Module):
             )
         )
 
-def apply_lora(bert_model, last_layers = 1, r=4, alpha=16):
-    for i in range(-last_layers, 0):  # Replace the last two layers
-        layer = bert_model.encoder.layer[i]
+def apply_lora(bert_model, last_layers = 2, r=8, alpha=16):
+    for i in [0,1]:  # Replace lora to the first attention layer and the last layer
+        layer = bert_model.bert.encoder.layer[i]
         
         # Replace attention linear layers with LoRA versions
         layer.attention.self.query = LoRALinear(
@@ -337,7 +371,7 @@ def freezing_layers_and_LoRA(custom_bert):
         param.requires_grad = True
 
     # Apply LoRA to the last two layers
-    custom_bert = apply_lora(custom_bert, r=4, alpha=16)
+    custom_bert = apply_lora(custom_bert, r=8, alpha=16)
 
 
     # Count trainable parameters
