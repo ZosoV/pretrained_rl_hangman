@@ -1,4 +1,4 @@
-# Pretrained RL-Hangman
+# Pretrained RL-Hangman: Enhancing Word Games Strategy with BERT and Deep Q-Networks.
 
 This project proposes solving the Hangman game by integrating a pretrained BERT model into a DQN algorithm.
 
