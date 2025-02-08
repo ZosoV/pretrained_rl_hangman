@@ -1,59 +1,89 @@
 # Pretrained RL-Hangman
 
-This projects proposes to solve the Hangman game by leveraging a pretrained-BERT model into a DQN algorithm. 
+This project proposes solving the Hangman game by integrating a pretrained BERT model into a DQN algorithm.
 
-In my previous experiments, I try the suitabily of finetuning BERT model for learning to play the Hangman game using a Character-Level Masked Language Modeling (MLM) objective for token classification. You can check the project here: [Hangman BERT](https://github.com/ZosoV/hangman_bert). Although the result were promising getting an accuracy around 70% in the evaluation dataset, there was still open a door for more improvements. 
+## Introduction
 
-In such way, I propose an approach to leverage the previous finetuned-BERT model in a reinforcement learning loop. This proposal is fundamented in the following observation. Although the finetuned BERT model worked for playing the Hangman, this approach has one importatnt limitation, which is that it doesn't consider that inherint decision making task that the problem of Hangman game has. It only adapts the biderectional contextual mechanism for training BERT in order to use it to play the Hangman game. However, the game itself has decision making nature, which should be address more efficiently. In this context and in oder to address this issue, we employ a DQN algorithm using a pretrained-BERT model as backbone to be finetuned. The idea is that the pre-trained BERT should contain enough information and capacity to understand the context between characters, while the DQN algorithm will confer the decision makind capabilities to take decision more efficiently in different escenarios. To the best of my knowledge this is the first algorithm that tries to do this.
+In my previous experiments, I explored the feasibility of fine-tuning a BERT model to play the Hangman game using a Character-Level Masked Language Modeling (MLM) objective for token classification. You can check the project here: [Hangman BERT](https://github.com/ZosoV/hangman_bert). Although the results were promising, achieving approximately 70% accuracy on the test dataset, there was still room for improvement.
+
+To enhance performance, I propose leveraging the previously fine-tuned BERT model within a reinforcement learning (RL) loop. This approach is based on the following observation: While the fine-tuned BERT model was capable of playing Hangman, it had a key limitation, which is it did not account for the inherent decision-making aspect of the game. The model merely adapted BERT's bidirectional contextual learning mechanism to predict letters, but the game itself involves strategic decision-making, which was not effectively addressed.
+
+To tackle this issue, I employ a DQN algorithm using a pretrained BERT model as a backbone for fine-tuning. The idea is that the pretrained BERT model should contain sufficient contextual knowledge about character relationships, while the DQN algorithm will provide decision-making capabilities, enabling more efficient choices in different game scenarios. To the best of my knowledge, this is the first algorithm that attempts this approach.
 
 ![](assets/pretrained_bert_rl.png)
 
 
 ## Reward Function
 
-One of the main parts of the design of this reinforcement learning approach was the design of a efficient reward function which should have to target the needs for the specific task of learning to play the Hangman game. The rewards are assignated as follows
+A crucial aspect of designing this reinforcement learning approach was defining an effective reward function tailored to the Hangman game. The rewards are assigned as follows:
 
-- The agent receives a reward of 50 when it completes the game successfully and discover the whole words
-- The agent recieves a penalty of -5 when it makes a mistakes and he loss a life. Notice the agent only has 6 possible lives
-- The agent receives a penalty of -2 if it guess a letter that was already assignated, but it doesn't loss a life.
-- The agent receives a reward of 10 when it guess one letter correctly plus a bonus given by relative and global frequencies gotten from a training dataset that contains around 250k common words.
+- **+50**: When the agent successfully completes the game by guessing the entire word.
+- **-5**: When the agent makes a mistake and loses a life (note that the agent has only six lives).
+- **-2**: When the agent guesses a letter that has already been attempted (no life lost).
+- **+10**: When the agent correctly guesses a letter, with an additional bonus based on relative and global letter frequencies obtained from a dataset containing ~250k common words.
 
-**Bonus System**
-The idea of the bonus system is confer reward or penalties that aligns with how a human solving the Hangman will act according the situation that he can encounter during the game. For example:
+### Bonus System
 
-1. In the initial part of the game, as all the letters are hidden, a human will try to guess the letter with more global frequency, which commonly are given by the vocals a, e, i, o, u. Then, we provide more reward if the guessed letter coincides with the letter.
+The bonus system is designed to align with human decision-making strategies in Hangman. It adjusts rewards based on the stage of the game:
 
-2. However, in the last part of the game, a human should change their strategy because he now has more letters and context to guess the words. In those escenarios, instead of looking to global frequencies, we look to relative frequency based on the current pattern of the word.  
-    - Specifically, from the reference training dataset, we filter the words that coincides with the current pattern of the word (e.g _ i g _ _ coincides with tiger and fight). Then, we calculate the letter frequencies relative to this subset of words; and the letter with more frequency receives a higher bonus.
+1. **Early game:** Since all letters are hidden at the start, a human player would typically guess the most frequent letters (obtained **globally** by considering the whole dataset), often vowels (a, e, i, o, u). A higher reward is given when the guessed letter matches these most globally frequent letters.
+2. **Late game:** As more letters become visible, a player refines their guesses based on the partially revealed word. Instead of relying on global frequencies, we use **relative frequency** based on the current word pattern:
+    - From the reference dataset, we filter words that match the current pattern (e.g., `_ i g _ _` could match "tiger" and "fight").
+    - We compute letter frequencies within this subset and reward the most frequent choices accordingly.
 
-All this process is controlled by a ratio value that weights the bonus by taking into account how earlier or late the agent is in the game, as is given as follows:
+This process is controlled by a ratio that adjusts the bonus dynamically depending the game stage:
 
 $$\text{ratio} = \frac{\text{num hidden letters}}{\text{word length}}$$
 
 $$\text{bonus} = \text{global reward} * \text{ratio} + \text{relative reward} * (1 - \text{ratio})$$
 
-### Content
-- A initial cleaning of data was performed on [DataExploration.ipynb](DataExploration.ipynb), where among other things the data was filter according the length and rare cases that will not be possible, or will be easier to guess.
-- The pretrained bert was developed using HuggingFace and Pytorch Library on scripts [utils_dataset.py](utils_dataset.py), [trainer.py](trainer.py), [train_pretrained_bert.py](train_pretrained_bert.py), and [utils_model.py](utils_model.py),
-- The DQN algorithm was developed using TorchRL and Pytorch Library on scripts [dqn.py](dqn.py) and [utils_dqn.py](utils_dqn.py).
-- A customized OpenGym environment was created using the training dataset on [./custom_env/hangman_env.py](./custom_env/hangman_env.py)
+, where $\text{ratio}=1$ happens in the start of the game, and $\text{ratio}=0$ happens at the end of the game.
+
+## Implementation Details
+
+- **Data Processing:** An initial data cleaning step was performed in [DataExploration.ipynb](DataExploration.ipynb), where among other things the words were filtered based on length and eliminating rare cases.
+- **Pretrained BERT Model:** Developed using Hugging Face and PyTorch in the following scripts:
+  - [utils_dataset.py](utils_dataset.py)
+  - [trainer.py](trainer.py)
+  - [train_pretrained_bert.py](train_pretrained_bert.py)
+  - [utils_model.py](utils_model.py)
+- **DQN Algorithm:** Implemented using TorchRL and PyTorch in:
+  - [dqn.py](dqn.py)
+  - [utils_dqn.py](utils_dqn.py)
+- **Custom Environment:** An OpenAI Gym environment was created based on the training dataset:  
+  - [./custom_env/hangman_env.py](./custom_env/hangman_env.py)
 
 
-### Ablation Study
+## Ablation Study
 
-I perform several experiments to adjust the environment and reward, the architecture, the hyperparameters, etc. Among the more relevant ablation studies that I perform are the following:
+I conducted several experiments to optimize different components of the model:
 
-- Add additional bigram and trigram bonus. Specifically, I took the most frequent bigrams and trigrams in my dataset and if the agent guess leads to one of this bigrams or tigrams I assign an additional reward bonus. However, the results were not quite distinct that the ones without using the mechanism.
-- I tried different architectures for the BERT model. The original BERT is huge and produce long lasting iterations. For that reason, I try different techniques:
-    1. I use Low Rank Adaptation (LoRA) in the original BERT model. Although now not all the weights were updated, the forward pass is still very expensive in terms of computational resource, which lead too long lasting iterations.
-    2. I used small and tiny variations of the original BERT. The pretrained BERT small is still very expensive, so by adding Low Rank Adaptation (LoRA), we reduce the updating steps. Then, the tiny BERT variant was tested getting similar results as small BERT with LoRA. We decided to use the tiny without any freezing or LoRA to give more opportunity to the model to learn the patterns.
-- The hyperparameters to finetuneed the pretrained BERT where set following the original standars in the paper BERT except for the learning rate that we decided to provide a customized scheduler more simple due to our task now is more simple.
-- The hyperparameters for the DQN algorithm were set according standard in atari games. However, we realize we have opportunity to increase learning by increase the batch sizes and given a large buffer size. Also we realize the importance of keep at least some value of randomness with the epsilon value due to the problem it self can find different escenarios where more than one guess could be valid.
+### 1. Adding Bigram and Trigram Bonuses
+- I extracted the most frequent bigrams and trigrams from the dataset and assigned additional bonus rewards when the agent’s guesses led to them.
+- However, results were not significantly different compared to models without this mechanism. Then, I decided to eliminate this feature.
 
-### Conclusion and Future words
+### 2. Variants of the BERT Model
+The original BERT model is large and computationally expensive, leading to long training times. I tested different modifications (even worse in RL setups):
 
-The inclusion of a pretrained BERT model into the DQN algorithm allow us to deal with decision makind capabilities of the problem by increasing the accuracy from  70% to 75% over the same evaluation test. Now, we even can evalutate our model in actual games of Hangman games without requiring a surrogate metric as in [Hangman BERT](https://github.com/ZosoV/hangman_bert). Here, we got sucessful games result in around 81% of 113000 games played.
+- **LoRA (Low-Rank Adaptation) on full original BERT:** Reduced the number of trainable parameters but still had expensive forward passes.
+- **Smaller BERT variants:**  
+  - *BERT-Small* with LoRA: Reduced training cost while maintaining performance.
+  - *BERT-Tiny*: Achieved similar results to BERT-Small with LoRA, but without requiring weight freezing, allowing more flexibility in learning.
+- **Final Decision:** I opted for BERT-Tiny without LoRA to balance computational efficiency and learning capacity.
 
-- Implement a simple initial rule of guessing one or two vocals (based on the frequencies) depending on the length of the word and just allowing one mistakes.
-- Instead of only training for the DQN objective, mix both objectives. Training for both the DQN objective and character MLM, to avoid catastrophic forgetting.
-- Try a RL algorithm that works in an stochastic way not deterministic over the DQN values because in many cases or games we can guess some letters a come up with a pattern that is valid to several other words. In those cases the decision are more stochastic than deterministic.
+### 3. Hyperparameter Tuning
+- Fine-tuning hyperparameters for BERT were mostly kept as in the original paper, except for the learning rate (LR). The LR was modified with two constants values; a initial warmup constant value and after some given steps a constant minimum value. In constrast with the complex scheduler in the orginal BERT, this scheduler proves to be efficient enough for our simpler task.
+- DQN hyperparameters were based on standard Atari game settings. However, performance improved when:
+  - Increasing batch size and buffer size.
+  - Maintaining some level of exploration (ε-greedy strategy), as different game scenarios could lead to multiple valid guesses (e.g., `_ i g _ _` could match "tiger" and "fight").
+
+## Results and Future Work
+
+Integrating a pretrained BERT model into the DQN algorithm improved the Hangman playing strategy, increasing accuracy from **70% to 75%** on the same test dataset and metrics than [Hangman BERT](https://github.com/ZosoV/hangman_bert). Additionally, the model was tested on real Hangman games, achieving a **success rate of 65%** across **113,000 games**.
+
+### Potential Improvements:
+- **Rule-based Initial Guesses:** Implement a simple strategy of guessing one or two vowels (based on frequency) at the beginning, limiting the number of mistakes. This small change can highly update the accuracy.
+- **Hybrid Training Objective:** Instead of training solely for the DQN objective, incorporate MLM training to prevent catastrophic forgetting.
+- **Stochastic RL Approach:** DQN is deterministic, but in many cases, different letter choices could lead to valid word patterns (e.g., `_ i g _ _` could match "tiger" and "fight"). A stochastic RL algorithm might better capture the game's inherent uncertainty.
+
+This work demonstrates how combining large language models with reinforcement learning can improve decision-making tasks. Future iterations could explore alternative RL approaches or more sophisticated reward functions to further refine performance.
