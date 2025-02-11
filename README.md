@@ -2,6 +2,8 @@
 
 This project proposes solving the Hangman game by integrating a pretrained BERT model into a DQN algorithm.
 
+![](assets/pretrained_bert_rl.png)
+
 ## Introduction
 
 In my previous experiments, I explored the feasibility of fine-tuning a BERT model to play the Hangman game using a Character-Level Masked Language Modeling (MLM) objective for token classification. You can check the project here: [Hangman BERT](https://github.com/ZosoV/hangman_bert). Although the results were promising, achieving approximately 70% accuracy on the test dataset, there was still room for improvement.
@@ -9,9 +11,6 @@ In my previous experiments, I explored the feasibility of fine-tuning a BERT mod
 To enhance performance, I propose leveraging the previously fine-tuned BERT model within a reinforcement learning (RL) loop. This approach is based on the following observation: While the fine-tuned BERT model was capable of playing Hangman, it had a key limitation, which is it did not account for the inherent decision-making aspect of the game. The model merely adapted BERT's bidirectional contextual learning mechanism to predict letters, but the game itself involves strategic decision-making, which was not effectively addressed.
 
 To tackle this issue, I employ a DQN algorithm using a pretrained BERT model as a backbone for fine-tuning. The idea is that the pretrained BERT model should contain sufficient contextual knowledge about character relationships, while the DQN algorithm will provide decision-making capabilities, enabling more efficient choices in different game scenarios. To the best of my knowledge, this is the first algorithm that attempts this approach.
-
-![](assets/pretrained_bert_rl.png)
-
 
 ## Reward Function
 
